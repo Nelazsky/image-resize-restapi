@@ -11,6 +11,7 @@ use Illuminate\Http\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
+use Intervention\Image\Facades\Image;
 
 class ImageManipulationController extends Controller
 {
@@ -67,26 +68,53 @@ class ImageManipulationController extends Controller
             //image.jpg -> image-resized.jpg
             $filename = pathinfo($data['name'], PATHINFO_FILENAME);
             $extension = $image->getClientOriginalExtension();
+            $originalPath = $absolutPath . $data['name'];
 
             $image->move($absolutPath, $data['name']);
         } else {
             $data['name'] = pathinfo($image, PATHINFO_BASENAME);
             $filename = pathinfo($image, PATHINFO_FILENAME);
             $extension = pathinfo($image, PATHINFO_EXTENSION);
+            $originalPath = $absolutPath . $data['name'];
 
-            copy($image, $absolutPath . $data['name']);
+            copy($image, $originalPath);
         }
         $data['path'] = $dir . $data['name'];
 
         $w = $all['w'];
         $h = $all['h'] ?? false;
 
-        list($width, $height) = $this->getImageWidthAndHeight($w, $h, $originalPath);
+        list($width, $height, $image) = $this->getImageWidthAndHeight($w, $h, $originalPath);
+
+        $resizedFilename = $filename . '-resized.' . $extension;
+
+        $image->resize($width, $height)->save($absolutPath . $resizedFilename);
+        $data['output_path'] = $dir . $resizedFilename;
+
+        $imageManipulation = ImageManipulation::create($data);
+
+        return new ImageManipulationResource($imageManipulation);
+
     }
 
     protected function getImageWidthAndHeight($w, $h, string $originalPath)
     {
+        $image = Image::make($originalPath);
+        $originalW = $image->width();
+        $originalH = $image->height();
 
+        if (str_ends_with($w, '%')) {
+            $ratioW = (float)str_replace('%', '', $w);
+            $ratioH = $h ? (float)str_replace('%', '', $h) : $ratioW;
+
+            $resizedW = $originalW * $ratioW / 100;
+            $resizedH = $originalH * $ratioH / 100;
+        } else {
+            $resizedW = (float)$w;
+            $resizedH = $h ? (float)$h : $originalH * $resizedW / $originalW;
+        }
+
+        return [$resizedW, $resizedH, $image];
     }
 
     /**
@@ -121,6 +149,6 @@ class ImageManipulationController extends Controller
      */
     public function destroy(ImageManipulationController $imageManipulation)
     {
-        //
+
     }
 }
